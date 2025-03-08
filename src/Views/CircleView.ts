@@ -36,6 +36,16 @@ export class CircleView extends MarkdownView {
         return super.setState(state, result);
     }
 
+    private sectionHitboxes: Array<{
+        startAngle: number;
+        endAngle: number;
+        innerRadius: number;
+        outerRadius: number;
+        title: string;
+        centerX: number;
+        centerY: number;
+    }> = [];
+
     async onOpen() {
         this.containerEl.empty();
         this.canvas = document.createElement("canvas");
@@ -44,6 +54,8 @@ export class CircleView extends MarkdownView {
         this.canvas.style.display = "block";
         this.containerEl.appendChild(this.canvas);
 
+        this.canvas.addEventListener("click", (ev: MouseEvent) => this.handleCanvasClick(ev));
+
         this.registerEvent(this.app.workspace.on("resize", () => {
             this.resizeCanvas();
         }));
@@ -51,6 +63,45 @@ export class CircleView extends MarkdownView {
         this.registerEvent(this.app.workspace.on("layout-change", () => {
             this.resizeCanvas();
         }));
+    }
+
+    // Add this method to handle clicks
+    private handleCanvasClick(event: MouseEvent) {
+        const canvas = event.target as HTMLCanvasElement;
+        const rect = canvas.getBoundingClientRect();
+        const x = event.clientX - rect.left;
+        const y = event.clientY - rect.top;
+
+        // Calculate distance and angle from center
+        for (const section of this.sectionHitboxes) {
+            const { centerX, centerY, startAngle, endAngle, innerRadius, outerRadius, title } = section;
+
+            // Calculate distance from center
+            const dx = x - centerX;
+            const dy = y - centerY;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            // Check if click is within the ring segment
+            if (distance >= innerRadius && distance <= outerRadius) {
+                // Calculate angle in radians
+                let angle = Math.atan2(dy, dx);
+                if (angle < 0) angle += 2 * Math.PI; // Convert to 0-2π range
+
+                // Check if angle is within section's arc
+                let inArc = false;
+                if (startAngle <= endAngle) {
+                    inArc = angle >= startAngle && angle <= endAngle;
+                } else {
+                    // Handle case where arc crosses 0°
+                    inArc = angle >= startAngle || angle <= endAngle;
+                }
+
+                if (inArc) {
+                    console.log(`Clicked: ${title}`);
+                    return;
+                }
+            }
+        }
     }
 
     protected async onClose(): Promise<void> {
@@ -260,6 +311,17 @@ export class CircleView extends MarkdownView {
                 }
                 ctx.restore();
             }
+
+            // Store hitbox information for interaction
+            this.sectionHitboxes.push({
+                startAngle: childStartAngle,
+                endAngle: childEndAngle,
+                innerRadius: innerRadius,
+                outerRadius: radius,
+                title: child.title,
+                centerX: centerX,
+                centerY: centerY
+            });
 
             this.drawHeaderCircles(
                 ctx,
