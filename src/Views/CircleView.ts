@@ -208,23 +208,39 @@ export class CircleView extends MarkdownView {
             const textX = centerX + textRadius * Math.cos(textAngle);
             const textY = centerY + textRadius * Math.sin(textAngle);
 
-            ctx.save();
-            ctx.font = "12px Arial";
-            ctx.fillStyle = "#000";
+            // Calculate the available width for the text
+            // We estimate how much arc length we have available
+            const arcLength = anglePerChild * textRadius;
 
-            // Determine text rotation based on position in the circle
-            if (textAngle > Math.PI / 2 && textAngle < Math.PI * 3 / 2) {
-                ctx.translate(textX, textY);
-                ctx.rotate(textAngle + Math.PI);
-                ctx.textAlign = "center";
-                ctx.fillText(child.title, 0, 0);
-            } else {
-                ctx.translate(textX, textY);
-                ctx.rotate(textAngle);
-                ctx.textAlign = "center";
-                ctx.fillText(child.title, 0, 0);
+            // Don't render text if the arc is too small
+            // Minimum size for readable text (empirically determined)
+            const MIN_ARC_LENGTH = 40;
+
+            if (arcLength >= MIN_ARC_LENGTH) {
+                ctx.save();
+                ctx.font = "12px Arial";
+                ctx.fillStyle = "#000";
+
+                // Determine text rotation based on position in the circle
+                if (textAngle > Math.PI / 2 && textAngle < Math.PI * 3 / 2) {
+                    ctx.translate(textX, textY);
+                    ctx.rotate(textAngle + Math.PI);
+                    ctx.textAlign = "center";
+                    // Calculate max text width - estimate based on arc size
+                    const maxWidth = Math.min(arcLength * 0.8, 100);
+                    // Draw text with possible line breaks
+                    this.drawArcText(ctx, child.title, 0, 0, maxWidth);
+                } else {
+                    ctx.translate(textX, textY);
+                    ctx.rotate(textAngle);
+                    ctx.textAlign = "center";
+
+                    // Calculate max text width - estimate based on arc size
+                    const maxWidth = Math.min(arcLength * 0.8, 100);
+                    this.drawArcText(ctx, child.title, 0, 0, maxWidth);
+                }
+                ctx.restore();
             }
-            ctx.restore();
 
             this.drawHeaderCircles(
                 ctx,
@@ -237,6 +253,52 @@ export class CircleView extends MarkdownView {
                 childStartAngle,
                 childEndAngle
             );
+        }
+    }
+
+    private drawArcText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number) {
+        // For very short text, just try to show the first few characters
+        if (maxWidth < 40 && text.length > 6) {
+            ctx.fillText(text.substring(0, 5) + "...", x, y);
+            return;
+        }
+
+        // For normal arcs, try to break text into lines if needed
+        const words = text.split(' ');
+        const lineHeight = 14;
+        let lines = [];
+        let currentLine = "";
+
+        // Create lines that fit within maxWidth
+        for (let i = 0; i < words.length; ++i) {
+            const testLine = currentLine + (currentLine ? " " : "") + words[i];
+            const metrics = ctx.measureText(testLine);
+
+            if (metrics.width > maxWidth && i > 0) {
+                lines.push(currentLine);
+                currentLine = words[i];
+            } else {
+                currentLine = testLine;
+            }
+        }
+
+        if (currentLine) {
+            lines.push(currentLine);
+        }
+
+        // Limit to 2 lines at most in arc segments to avoid overlapping
+        if (lines.length > 2) {
+            lines = lines.slice(0, 2);
+            lines[1] = lines[1] + "...";
+        }
+
+        // Draw lines centered vertically around the original y position
+        const totalHeight = lines.length * lineHeight;
+        let lineY = y - (totalHeight / 2) + (lineHeight / 2);
+
+        for (const line of lines) {
+            ctx.fillText(line, x, lineY);
+            lineY += lineHeight;
         }
     }
 
