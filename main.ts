@@ -1,43 +1,5 @@
-import { FileView, IconName, MarkdownView, Notice, Plugin } from 'obsidian';
-
-const VIEW_TYPE_CIRCLE = "circle-view";
-
-class CircleView extends MarkdownView {
-	getViewType(): string {
-		return VIEW_TYPE_CIRCLE;
-	}
-
-	getDisplayText(): string {
-		return "Circle";
-	}
-
-	getIcon(): IconName {
-		return "circle"; // built-in icon
-	}
-
-	async onOpen() {
-		this.containerEl.empty();
-		const canvas = document.createElement("canvas");
-		canvas.width = 600;
-		canvas.height = 600;
-		this.containerEl.appendChild(canvas);
-		const ctx = canvas.getContext("2d");
-		if (ctx) {
-			this.drawCircle(ctx);
-		}
-	}
-
-	protected async onClose(): Promise<void> {
-		this.containerEl.empty();
-	}
-
-	private drawCircle(ctx: CanvasRenderingContext2D) {
-		ctx.fillStyle = "#ccc";
-		ctx.beginPath();
-		ctx.arc(300, 300, 200, 0, 2 * Math.PI);
-		ctx.fill();
-	}
-}
+import { FileView, Notice, Plugin } from 'obsidian';
+import { CircleView, VIEW_TYPE_CIRCLE } from 'src/Views/CircleView';
 
 export default class CirclePlugin extends Plugin {
 	async onload() {
