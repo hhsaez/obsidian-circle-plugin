@@ -162,7 +162,7 @@ export class CircleView extends MarkdownView {
         const nextLevel = depth + 1;
         const colorIndex = Math.min(nextLevel, colors.length - 1);
 
-        // Draw the circle for this level
+        // Draw the circle ouline for this level
         ctx.beginPath();
         ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
         ctx.strokeStyle = "#333";
@@ -178,11 +178,25 @@ export class CircleView extends MarkdownView {
             const childEndAngle = childStartAngle + anglePerChild;
             const midAngle = childStartAngle + (anglePerChild / 2);
 
-            // Draw section arc
+            // Draw section arc, but only from inner radius to outer radius (as a ring segment)
             ctx.beginPath();
+
+            // Draw the outer arc
             ctx.arc(centerX, centerY, radius, childStartAngle, childEndAngle);
-            ctx.lineTo(centerX, centerY);
+
+            // Draw line to inner point
+            const innerRadius = depth === 0 ? radiusStep * 0.5 : radiusStep * depth;
+            const innerEndX = centerX + innerRadius * Math.cos(childEndAngle);
+            const innerEndY = centerY + innerRadius * Math.sin(childEndAngle);
+            ctx.lineTo(innerEndX, innerEndY);
+
+            // Draw the innerarc (in counter-clockwise direction)
+            ctx.arc(centerX, centerY, innerRadius, childEndAngle, childStartAngle, true);
+
+            // Close the path
             ctx.closePath();
+
+            // Fill and stroke
             ctx.fillStyle = colors[colorIndex] + "80"; // 50% opacity
             ctx.fill();
             ctx.strokeStyle = "#333";
