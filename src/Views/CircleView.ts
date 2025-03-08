@@ -4,6 +4,7 @@ import { Node, parseFileHeaders, parseHeaders } from "src/utils/parseHeaders";
 export const VIEW_TYPE_CIRCLE = "circle-view";
 
 export class CircleView extends MarkdownView {
+    private canvas: HTMLCanvasElement | undefined;
     private root: Node | undefined;
 
     constructor(leaf: WorkspaceLeaf) {
@@ -28,32 +29,50 @@ export class CircleView extends MarkdownView {
             const markdown = await this.app.vault.read(markdownFile);
             const children = parseHeaders(markdown);
             this.root = { level: 0, title: markdownFile.basename || "Root", children: children };
-            this.render();
+            if (this.canvas) {
+                this.drawCircleVisualization(this.canvas, this.root);
+            }
         }
         return super.setState(state, result);
     }
 
     async onOpen() {
-        this.render();
+        this.containerEl.empty();
+        this.canvas = document.createElement("canvas");
+        this.canvas.style.width = "100%";
+        this.canvas.style.height = "100%";
+        this.canvas.style.display = "block";
+        this.containerEl.appendChild(this.canvas);
+
+        this.registerEvent(this.app.workspace.on("resize", () => {
+            this.resizeCanvas();
+        }));
+
+        this.registerEvent(this.app.workspace.on("layout-change", () => {
+            this.resizeCanvas();
+        }));
     }
 
     protected async onClose(): Promise<void> {
         this.containerEl.empty();
     }
 
-    private render() {
-        this.containerEl.empty();
-        if (!this.root) {
-            this.containerEl.createEl("p", { text: "No file selected" });
+    private resizeCanvas() {
+        if (!this.canvas) {
             return;
         }
 
-        const canvas = document.createElement("canvas");
-        canvas.width = 600;
-        canvas.height = 600;
-        this.containerEl.appendChild(canvas);
+        const { clientWidth, clientHeight } = this.containerEl;
+        if (this.canvas.width === clientWidth && this.canvas.height === clientWidth) {
+            // Only resize if dimensions have actually changed.
+            return;
+        }
 
-        this.drawCircleVisualization(canvas, this.root);
+        this.canvas.width = Math.max(100, clientWidth);
+        this.canvas.height = Math.max(100, clientHeight);
+        if (this.root) {
+            this.drawCircleVisualization(this.canvas, this.root);
+        }
     }
 
     private drawCircleVisualization(canvas: HTMLCanvasElement, root: Node) {
@@ -73,7 +92,7 @@ export class CircleView extends MarkdownView {
 
         // Calculate max depth to determine circle spacing
         const maxDepth = this.findMaxDepth(root);
-        const maxRadius = Math.min(width, height) / 2 * 0.90; // leave some padding
+        const maxRadius = Math.min(width, height) / 2 * 0.95; // leave some padding
         const radiusStep = maxDepth > 1 ? maxRadius / maxDepth : maxRadius;
 
         // Color palette for different levels
