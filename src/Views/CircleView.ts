@@ -163,11 +163,11 @@ export class CircleView extends MarkdownView {
         const colorIndex = Math.min(nextLevel, colors.length - 1);
 
         // Draw the circle ouline for this level
-        ctx.beginPath();
-        ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
-        ctx.strokeStyle = "#333";
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
+        // ctx.beginPath();
+        // ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+        // ctx.strokeStyle = "#333";
+        // ctx.lineWidth = 1.5;
+        // ctx.stroke();
 
         // Draw sectiosn for each children
         const anglePerChild = (endAngle - startAngle) / node.children.length;
