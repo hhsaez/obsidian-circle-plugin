@@ -57,6 +57,19 @@ export class CircleView extends MarkdownView {
 
         this.canvas.addEventListener("click", (ev: MouseEvent) => this.handleCanvasClick(ev));
 
+        // Add keyboard event listener for navigation
+        // Use tabIndex to make the canvas focusable
+        this.canvas.tabIndex = 0;
+        this.canvas.addEventListener("keydown", (ev: KeyboardEvent) => this.handleKeyDown(ev));
+
+        // // Add focus styles (optional)
+        // this.canvas.addEventListener("focus", () => {
+        //     this.canvas!.style.outline = "2px solid var(--interactive-accent)";
+        // });
+        // this.canvas.addEventListener("blur", () => {
+        //     this.canvas!.style.outline = "none";
+        // });
+
         this.registerEvent(this.app.workspace.on("resize", () => {
             this.resizeCanvas();
         }));
@@ -64,6 +77,125 @@ export class CircleView extends MarkdownView {
         this.registerEvent(this.app.workspace.on("layout-change", () => {
             this.resizeCanvas();
         }));
+
+        // Focus on canvas after initialization
+        requestAnimationFrame(() => this.canvas?.focus());
+    }
+
+    // Handle keyboard navigation
+    private handleKeyDown(event: KeyboardEvent) {
+        if (!this.canvas || !this.root) {
+            return;
+        }
+
+        if (!this.selectedSection) {
+            // if nothing is selected yet, select the first section if available
+            if (["ArrowDown", "ArrowRight"].includes(event.key) && this.sectionHitboxes.length > 0) {
+                this.selectedSection = this.sectionHitboxes[0];
+                this.redraw();
+            }
+            return;
+        }
+
+        const { startAngle, endAngle, innerRadius, outerRadius } = this.selectedSection;
+        switch (event.key) {
+            case "ArrowRight":
+                this.navigateHorizontally(1);
+                break;
+            case "ArrowLeft":
+                this.navigateHorizontally(-1);
+                break;
+            case "ArrowUp":
+                this.navigateVertically(1);
+                break;
+            case "ArrowDown":
+                this.navigateVertically(-1);
+                break;
+        }
+    }
+
+    // Navigate between sections at the same level (left/right)
+    private navigateHorizontally(direction: number) {
+        if (!this.selectedSection) {
+            return;
+        }
+
+        // Find sections at the same level (same inner and outer radius)
+        const sameLevelSections = this.sectionHitboxes.filter(section =>
+            section.innerRadius === this.selectedSection!.innerRadius &&
+            section.outerRadius === this.selectedSection!.outerRadius
+        );
+
+        if (sameLevelSections.length <= 1) {
+            // No other sections at this level
+            return;
+        }
+
+        // Find the index of the current section in the filtered list
+        const currentIndex = sameLevelSections.findIndex(section =>
+            section.startAngle === this.selectedSection!.startAngle &&
+            section.endAngle === this.selectedSection!.endAngle
+        );
+
+        if (currentIndex === -1) {
+            return;
+        }
+
+        // Calculate the next index with wrap-around
+        const nextIndex = (currentIndex + direction + sameLevelSections.length) % sameLevelSections.length;
+
+        // Select the new section
+        this.selectedSection = sameLevelSections[nextIndex];
+        this.redraw();
+    }
+
+    // Navigate deeper into the hierarchy or back up (down/up)
+    private navigateVertically(direction: number) {
+        if (!this.selectedSection) {
+            return;
+        }
+
+        if (direction > 0) {
+            // Moving deeper (down)
+            // Find child sections (sections whose arc is contained within the current section's arc)
+            const childSections = this.sectionHitboxes.filter(section =>
+                Math.abs(section.innerRadius - this.selectedSection!.outerRadius) < 1 &&
+                section.startAngle >= this.selectedSection!.startAngle &&
+                section.endAngle < this.selectedSection!.endAngle
+            );
+            if (childSections.length > 0) {
+                // Find the child section that's most centered within th current section's arc
+                const currentMidAngle = (this.selectedSection!.startAngle + this.selectedSection!.endAngle) / 2;
+                let bestChild = childSections[0];
+                let bestDiff = Math.abs(bestChild.startAngle + bestChild.endAngle) / 2 - currentMidAngle;
+
+                for (const child of childSections) {
+                    const childMidAngle = (child.startAngle + child.endAngle) / 2;
+                    const diff = Math.abs(childMidAngle - currentMidAngle);
+                    if (diff < bestDiff) {
+                        bestDiff = diff;
+                        bestChild = child;
+                    }
+                }
+
+                this.selectedSection = bestChild;
+                this.redraw();
+            }
+        } else {
+            // Moving outward (up)
+            // Find parent section (section whose arc contains the current section's arc)
+            const parentSection = this.sectionHitboxes.find(section =>
+                Math.abs(section.outerRadius - this.selectedSection!.innerRadius) < 1 &&
+                section.startAngle <= this.selectedSection!.startAngle &&
+                section.endAngle >= this.selectedSection!.endAngle
+            );
+
+            if (parentSection) {
+                // Just take the first parent (there should usually be only one).
+                this.selectedSection = parentSection;
+                this.redraw();
+            }
+        }
     }
 
     // Add this method to handle clicks
@@ -269,9 +401,9 @@ export class CircleView extends MarkdownView {
             // Check if this section is selected
             const isSelected = this.selectedSection &&
                 this.selectedSection.startAngle === childStartAngle &&
-                this.selectedSection.endAngle === childEndAngle
-            this.selectedSection?.innerRadius === innerRadius &&
-                this.selectedSection?.outerRadius === radius;
+                this.selectedSection.endAngle === childEndAngle &&
+                this.selectedSection.innerRadius === innerRadius &&
+                this.selectedSection.outerRadius === radius;
 
             // Draw section arc, but only from inner radius to outer radius (as a ring segment)
             ctx.beginPath();
