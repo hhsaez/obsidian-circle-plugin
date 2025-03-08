@@ -3,6 +3,16 @@ import { Node, parseFileHeaders, parseHeaders } from "src/utils/parseHeaders";
 
 export const VIEW_TYPE_CIRCLE = "circle-view";
 
+interface SelectableSection {
+    startAngle: number;
+    endAngle: number;
+    innerRadius: number;
+    outerRadius: number;
+    title: string;
+    centerX: number;
+    centerY: number;
+};
+
 export class CircleView extends MarkdownView {
     private canvas: HTMLCanvasElement | undefined;
     private root: Node | undefined;
@@ -29,22 +39,13 @@ export class CircleView extends MarkdownView {
             const markdown = await this.app.vault.read(markdownFile);
             const children = parseHeaders(markdown);
             this.root = { level: 0, title: markdownFile.basename || "Root", children: children };
-            if (this.canvas) {
-                this.drawCircleVisualization(this.canvas, this.root);
-            }
+            this.redraw();
         }
         return super.setState(state, result);
     }
 
-    private sectionHitboxes: Array<{
-        startAngle: number;
-        endAngle: number;
-        innerRadius: number;
-        outerRadius: number;
-        title: string;
-        centerX: number;
-        centerY: number;
-    }> = [];
+    private sectionHitboxes: Array<SelectableSection> = [];
+    private selectedSection: SelectableSection | undefined;
 
     async onOpen() {
         this.containerEl.empty();
@@ -97,15 +98,30 @@ export class CircleView extends MarkdownView {
                 }
 
                 if (inArc) {
-                    console.log(`Clicked: ${title}`);
+                    // set the selected section
+                    this.selectedSection = section;
+                    this.redraw();
                     return;
                 }
             }
+        }
+
+        // If we clicked outside of any section, clear the selection
+        if (this.selectedSection) {
+            this.selectedSection = undefined;
+            // Redraw without the selection
+            this.redraw();
         }
     }
 
     protected async onClose(): Promise<void> {
         this.containerEl.empty();
+    }
+
+    private redraw() {
+        if (this.canvas && this.root) {
+            this.drawCircleVisualization(this.canvas, this.root);
+        }
     }
 
     private resizeCanvas() {
@@ -121,9 +137,8 @@ export class CircleView extends MarkdownView {
 
         this.canvas.width = Math.max(100, clientWidth);
         this.canvas.height = Math.max(100, clientHeight);
-        if (this.root) {
-            this.drawCircleVisualization(this.canvas, this.root);
-        }
+
+        this.redraw();
     }
 
     private drawCircleVisualization(canvas: HTMLCanvasElement, root: Node) {
@@ -247,6 +262,16 @@ export class CircleView extends MarkdownView {
             const childStartAngle = startAngle + (anglePerChild * i);
             const childEndAngle = childStartAngle + anglePerChild;
             const midAngle = childStartAngle + (anglePerChild / 2);
+            const innerRadius = depth === 0 ? radiusStep * 0.5 : radiusStep * depth;
+            const innerEndX = centerX + innerRadius * Math.cos(childEndAngle);
+            const innerEndY = centerY + innerRadius * Math.sin(childEndAngle);
+
+            // Check if this section is selected
+            const isSelected = this.selectedSection &&
+                this.selectedSection.startAngle === childStartAngle &&
+                this.selectedSection.endAngle === childEndAngle
+            this.selectedSection?.innerRadius === innerRadius &&
+                this.selectedSection?.outerRadius === radius;
 
             // Draw section arc, but only from inner radius to outer radius (as a ring segment)
             ctx.beginPath();
@@ -255,9 +280,6 @@ export class CircleView extends MarkdownView {
             ctx.arc(centerX, centerY, radius, childStartAngle, childEndAngle);
 
             // Draw line to inner point
-            const innerRadius = depth === 0 ? radiusStep * 0.5 : radiusStep * depth;
-            const innerEndX = centerX + innerRadius * Math.cos(childEndAngle);
-            const innerEndY = centerY + innerRadius * Math.sin(childEndAngle);
             ctx.lineTo(innerEndX, innerEndY);
 
             // Draw the innerarc (in counter-clockwise direction)
@@ -269,7 +291,8 @@ export class CircleView extends MarkdownView {
             // Fill and stroke
             ctx.fillStyle = colors[colorIndex] + "80"; // 50% opacity
             ctx.fill();
-            ctx.strokeStyle = "#333";
+            ctx.strokeStyle = isSelected ? "000" : "#333";
+            ctx.lineWidth = isSelected ? 3 : 1;
             ctx.stroke();
 
             // Draw text label
