@@ -1,4 +1,4 @@
-import { MarkdownView, Plugin } from 'obsidian';
+import { FileView, IconName, MarkdownView, Notice, Plugin } from 'obsidian';
 
 const VIEW_TYPE_CIRCLE = "circle-view";
 
@@ -9,6 +9,10 @@ class CircleView extends MarkdownView {
 
 	getDisplayText(): string {
 		return "Circle";
+	}
+
+	getIcon(): IconName {
+		return "circle"; // built-in icon
 	}
 
 	async onOpen() {
@@ -39,6 +43,8 @@ export default class CirclePlugin extends Plugin {
 	async onload() {
 		console.log("Circle Plugin Loaded");
 
+		this.registerView(VIEW_TYPE_CIRCLE, (leaf) => new CircleView(leaf));
+
 		this.addCommand({
 			id: "toggle-circle-view",
 			name: "Toggle Circle View",
@@ -47,20 +53,30 @@ export default class CirclePlugin extends Plugin {
 	}
 
 	onunload(): void {
+		this.app.workspace.detachLeavesOfType(VIEW_TYPE_CIRCLE);
+
 		console.log("Circle Plugin Unloaded");
 	}
 
-	private toggleCircleView() {
+	private async toggleCircleView() {
 		const { workspace } = this.app;
-		const activeLeaf = workspace.getLeaf();
-		if (!activeLeaf) {
+		const leaf = workspace.getLeaf();
+		if (!leaf) {
+			new Notice("No active file to visualize");
 			return;
 		}
 
-		if (activeLeaf.getViewState().type === VIEW_TYPE_CIRCLE) {
-			workspace.setActiveLeaf(workspace.getLeaf(true));
+		const currentView = leaf.view;
+		const currentFilePath = currentView instanceof FileView ? currentView.file?.path : null;
+		if (!currentFilePath) {
+			new Notice("No active file to visualize");
+			return;
+		}
+
+		if (leaf.view.getViewType() === VIEW_TYPE_CIRCLE) {
+			await leaf.setViewState({ type: "markdown", state: { file: currentFilePath } })
 		} else {
-			workspace.getLeaf(true).setViewState({ type: VIEW_TYPE_CIRCLE });
+			await leaf.setViewState({ type: VIEW_TYPE_CIRCLE, state: { file: currentFilePath } })
 		}
 	}
 }
