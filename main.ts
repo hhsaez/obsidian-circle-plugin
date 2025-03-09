@@ -12,6 +12,94 @@ export default class CirclePlugin extends Plugin {
 			name: "Toggle Circle View",
 			callback: () => this.toggleCircleView(),
 		});
+
+		this.addCommand({
+			id: "circle-create-child-header",
+			name: "Create child header form selected section",
+			checkCallback: (checking: boolean) => {
+				const activeView = this.app.workspace.getActiveViewOfType(CircleView);
+				if (activeView) {
+					if (!checking && !activeView.isEditingActive()) {
+						activeView.createChildHeader();
+					}
+					return true;
+				}
+			},
+			hotkeys: [
+				{
+					modifiers: ["Shift", "Ctrl"],
+					key: "Enter",
+				}
+			]
+		});
+
+		this.addCommand({
+			id: "circle-create-sibling-header",
+			name: "Create sibling header form selected section",
+			checkCallback: (checking: boolean) => {
+				const activeView = this.app.workspace.getActiveViewOfType(CircleView);
+				if (activeView) {
+					if (!checking && !activeView.isEditingActive()) {
+						activeView.createSiblingHeader();
+					}
+					return true;
+				}
+				return false;
+			},
+			hotkeys: [
+				{
+					modifiers: ["Shift"],
+					key: "Enter",
+				}
+			]
+		});
+
+		this.addCommand({
+			id: "circle-edit-header",
+			name: "Edit selected header",
+			checkCallback: (checking: boolean) => {
+				const activeView = this.app.workspace.getActiveViewOfType(CircleView);
+				if (activeView) {
+					if (!checking) {
+						if (!activeView.isEditingActive()) {
+							activeView.showEditInput();
+						} else {
+							activeView.commitChanges();
+						}
+					}
+					return true;
+				}
+				return false;
+			},
+			hotkeys: [
+				{
+					modifiers: [],
+					key: "Enter",
+				}
+			]
+		});
+
+		this.addCommand({
+			id: "circle-cancel",
+			name: "Cancel current actions",
+			checkCallback: (checking: boolean) => {
+				const activeView = this.app.workspace.getActiveViewOfType(CircleView);
+				if (activeView) {
+					if (!checking) {
+						activeView.cancelChanges();
+					}
+					return true;
+				}
+				return false;
+			},
+			hotkeys: [
+				{
+					modifiers: [],
+					key: "Escape",
+				}
+			]
+		});
+
 	}
 
 	onunload(): void {

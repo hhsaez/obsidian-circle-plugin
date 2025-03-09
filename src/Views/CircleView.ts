@@ -66,14 +66,6 @@ export class CircleView extends MarkdownView {
         this.canvas.tabIndex = 0;
         this.canvas.addEventListener("keydown", (ev: KeyboardEvent) => this.handleKeyDown(ev));
 
-        // // Add focus styles (optional)
-        // this.canvas.addEventListener("focus", () => {
-        //     this.canvas!.style.outline = "2px solid var(--interactive-accent)";
-        // });
-        // this.canvas.addEventListener("blur", () => {
-        //     this.canvas!.style.outline = "none";
-        // });
-
         this.registerEvent(this.app.workspace.on("resize", () => {
             this.resizeCanvas();
         }));
@@ -110,11 +102,6 @@ export class CircleView extends MarkdownView {
             return;
         }
 
-        if (event.key === "Enter") {
-            this.showEditInput();
-            return;
-        }
-
         const { startAngle, endAngle, innerRadius, outerRadius } = this.selectedSection;
         switch (event.key) {
             case "ArrowRight":
@@ -132,7 +119,283 @@ export class CircleView extends MarkdownView {
         }
     }
 
-    private showEditInput() {
+    public createChildHeader(): void {
+        if (this.selectedSection) {
+            this.showCreateHeaderInput("child");
+        }
+    }
+
+    public createSiblingHeader(): void {
+        if (this.selectedSection) {
+            this.showCreateHeaderInput("sibling");
+        }
+    }
+
+    private showCreateHeaderInput(mode: "child" | "sibling") {
+        console.log("showCreateHEaderInput", mode);
+        if (!this.selectedSection || !this.canvas) {
+            return;
+        }
+
+        // Fin the corresponding node in our hierarchy
+        const selectedNode = this.findNodeBySection(this.root!, this.selectedSection.title);
+        if (!selectedNode) {
+            console.error("Could not find node for selected section");
+            return;
+        }
+
+        this.editStartNode = selectedNode;
+
+        // Create or reuse input element
+        if (!this.editingInput) {
+            this.editingInput = document.createElement("input");
+            this.editingInput.type = "text";
+            this.editingInput.className = "circle-edit-input";
+
+            // Style the input
+            Object.assign(this.editingInput.style, {
+                position: "absolute",
+                boxSizing: "border-box",
+                padding: "4px 8px",
+                background: "rgba(255, 255, 255, 0.9)",
+                border: "2px solid var(--interactive-accent)",
+                borderRadius: "4px",
+                boxShadow: "0 2px 8px rgba(0, 0, 0, 0.2)",
+                fontSize: "14px",
+                color: "#000",
+                zIndex: "100",
+            });
+
+            // Store the mode explicitly for later use
+            this.editingInput.dataset.mode = mode;
+
+            this.containerEl.appendChild(this.editingInput);
+        }
+
+        const { centerX, centerY, startAngle, endAngle, innerRadius, outerRadius } = this.selectedSection;
+
+        // Calculate optimal position for the input
+        // For child headers, position it a bit deeper
+        // For siblings, position it at the same level but to the side
+        let textRadius, midAngle;
+
+        if (mode === "child") {
+            // For child: position deeper than parent
+            textRadius = outerRadius + (outerRadius - innerRadius) * 0.35;
+            midAngle = (startAngle + endAngle) / 2;
+        } else {
+            // For sibling: position at same level but to the right
+            textRadius = (outerRadius - (outerRadius - innerRadius) * 0.35);
+            midAngle = endAngle + 0.1; // Just to the right of this section
+        }
+
+        const textX = centerX + textRadius * Math.cos(midAngle);
+        const textY = centerY + textRadius * Math.sin(midAngle);
+
+        // Get canvas bounds relative to the window
+        const canvasRect = this.canvas.getBoundingClientRect();
+
+        // Use pixel coordinates relative to the container
+        const inputLeft = canvasRect.left + textX;
+        const inputTop = canvasRect.top + textY;
+
+        // Set a placeholder according to the mode
+        this.editingInput.value = "";
+        this.editingInput.placeholder = mode === "child"
+            ? "New child header..."
+            : "New sibling header...";
+
+        // Calculate width
+        const width = 150; // Fixed width for new header input
+
+        // Position the input centered on the calculated point
+        Object.assign(this.editingInput.style, {
+            left: `${inputLeft - width / 2}px`,
+            top: `${inputTop - 15}px`, // Offset to center vertically
+            width: `${width}px`
+        });
+
+        // Store the creation mode for later use
+        this.editingInput.dataset.mode = mode;
+
+        // Show and focus the input
+        this.editingInput.style.display = "block";
+        this.editingInput.focus();
+    }
+
+    // Create a new header based on the provided mode
+    private async createNewHeader(mode: "child" | "sibling") {
+        if (!this.editingInput || !this.editStartNode) {
+            this.hideEditInput();
+            return;
+        }
+
+        const newTitle = this.editingInput.value.trim();
+        if (!newTitle) {
+            // Empty title, just hide input
+            this.hideEditInput();
+            return;
+        }
+
+        try {
+            // Determine the new header's level
+            let newLevel: number;
+            if (mode === "child") {
+                newLevel = this.editStartNode.level + 1;
+            } else { // sibling
+                newLevel = this.editStartNode.level;
+            }
+
+            // Create the new header in the markdown file
+            await this.insertNewHeader(newLevel, newTitle, this.editStartNode, mode);
+
+            // Hide input
+            this.hideEditInput();
+
+            // Refresh the view to show the new header
+            if (this.markdownFile) {
+                const markdown = await this.app.vault.read(this.markdownFile);
+                const children = parseHeaders(markdown);
+                this.root = { level: 0, title: this.markdownFile.basename || "Root", children: children };
+
+                // Clear section hitboxes before redrawing
+                this.sectionHitboxes = [];
+                this.redraw();
+
+                if (mode === "child") {
+                    // Selet the first child of the previously selected node
+                    const parentNode = this.findNodeBySection(this.root, this.editStartNode.title);
+                    if (parentNode && parentNode.children && parentNode.children.length > 0) {
+                        // Find the newly added child (should be the one with our title)
+                        const newChildNode = parentNode.children.find(child => child.title === newTitle);
+                        if (newChildNode) {
+                            // Find its section hitboxes
+                            const newSection = this.sectionHitboxes.find(section => section.title === newTitle);
+                            if (newSection) {
+                                this.selectedSection = newSection;
+                                this.redraw();
+                            }
+                        }
+                    }
+                } else if (mode === "sibling") {
+                    // Try to select the newly created sibling
+                    const newSection = this.sectionHitboxes.find(section => section.title === newTitle);
+                    if (newSection) {
+                        this.selectedSection = newSection;
+                        this.redraw();
+                    }
+                }
+            }
+        } catch (error) {
+            console.error("Failed to create new header:", error);
+            this.hideEditInput();
+        }
+    }
+
+    // Insert a new header into the markdown file
+    private async insertNewHeader(level: number, title: string, relativeTo: Node, mode: "child" | "sibling") {
+        const file = this.markdownFile;
+        if (!file) {
+            console.error("No active file to update");
+            throw new Error("No active file");
+        }
+
+        try {
+            // Read the file content
+            console.log(`Creating new ${mode} header with title: "${title}"`);
+            const content = await this.app.vault.read(file);
+            const lines = content.split("\n");
+
+            // Find the position to insert the new header
+            const headerPrefix = "#".repeat(relativeTo.level) + " ";
+            let insertPosition = -1;
+
+            // Find the position of the reference node
+            for (let i = 0; i < lines.length; ++i) {
+                const line = lines[i];
+                if (line.startsWith(headerPrefix) && line.substring(headerPrefix.length).trim() === relativeTo.title) {
+                    insertPosition = i;
+                    break;
+                }
+            }
+
+            if (insertPosition === -1) {
+                throw new Error(`Could not find relative header "${relativeTo.title}" in file`);
+            }
+
+            // For a child, we insert right after the reference header
+            // For a sibling, we need to find where the next header of the same or lower level appears
+            if (mode === "child") {
+                insertPosition++; // Insert right after the parent header
+            } else {
+                // For siblings, we need to find where the current section ends
+                // We look for the next header with same or lower level
+                let nextSectionStart = lines.length;
+                for (let i = insertPosition + 1; i < lines.length; ++i) {
+                    const line = lines[i];
+                    if (line.startsWith("#")) {
+                        // Count the number of # characters
+                        let count = 0;
+                        while (line[count] === "#") count++;
+
+                        if (count <= relativeTo.level) {
+                            // Found next section of same or lower level
+                            nextSectionStart = i;
+                            break;
+                        }
+                    }
+                }
+                insertPosition = nextSectionStart;
+            }
+
+            // Create the new header line
+            const newHeaderLine = "#".repeat(level) + " " + title;
+
+            // Insert the new line
+            lines.splice(insertPosition, 0, newHeaderLine);
+
+            // Write the updated content back to the file
+            const newContent = lines.join("\n");
+            await this.app.vault.modify(file, newContent);
+
+            console.log(`Created new ${mode} header at level ${level}: "${title}"`);
+        } catch (error) {
+            console.error("Failed to update file:", error);
+            throw error;
+        }
+    }
+
+    public isEditingActive(): boolean {
+        return this.editingInput !== null && this.editingInput.style.display !== "none";
+    }
+
+    public commitChanges() {
+        if (!this.editingInput) {
+            return;
+        }
+
+        // TODO: add a proper mode enum
+        const editingMode = this.editingInput.dataset.mode;
+        switch (editingMode) {
+            case "edit":
+                this.saveEditChanges();
+                break;
+            case "sibling":
+                this.createNewHeader("sibling");
+                break;
+            case "child":
+                this.createNewHeader("child");
+                break;
+            default:
+                break;
+        }
+    }
+
+    public cancelChanges() {
+        this.hideEditInput();
+    }
+
+    public showEditInput = () => {
         if (!this.selectedSection || !this.canvas) {
             return;
         }
@@ -167,12 +430,11 @@ export class CircleView extends MarkdownView {
                 zIndex: "100",
             });
 
-            // Add event listeners
-            this.editingInput.addEventListener("keydown", this.handleInputKeyDown.bind(this));
-            this.editingInput.addEventListener("blur", this.handleInputBlur.bind(this));
-
             this.containerEl.appendChild(this.editingInput);
         }
+
+        // Set mode explicitly to avoid confusion
+        this.editingInput.dataset.mode = "edit";
 
         // Calculate optimal position for the input
         // For text position, we use the same logic used for text rendering
@@ -209,32 +471,16 @@ export class CircleView extends MarkdownView {
         this.editingInput.select(); // Select all text
     }
 
-    private handleInputKeyDown(event: KeyboardEvent) {
-        if (!this.editingInput) {
-            return;
-        }
-
-        if (event.key === "Enter") {
-            // Commit changes
-            this.saveEditChanges();
-            event.preventDefault();
-        } else if (event.key === "Escape") {
-            // Cancel editing
-            this.hideEditInput();
-            event.preventDefault();
-        }
-    }
-
-    private handleInputBlur() {
-        // When input loses focus, discard changes (or maybe save them?)
-        this.hideEditInput();
-    }
-
     private hideEditInput() {
         if (this.editingInput) {
             this.editingInput.style.display = "none";
             this.canvas?.focus(); // Return focus to the canvas
+
+            // Make sure our edit mode variables are reset
+            this.editingInput.dataset.mode = "";
         }
+
+        // Make sure we clear the edit state
         this.editStartNode = null;
     }
 
@@ -378,7 +624,9 @@ export class CircleView extends MarkdownView {
             // Moving deeper (down)
             // Find child sections (sections whose arc is contained within the current section's arc)
             const childSections = this.sectionHitboxes.filter(section =>
+                // Check if this section is at the next level down
                 Math.abs(section.innerRadius - this.selectedSection!.outerRadius) < 1 &&
+                // Check if this section is contained within the arc of the current section
                 section.startAngle >= this.selectedSection!.startAngle &&
                 section.endAngle < this.selectedSection!.endAngle
             );
@@ -403,15 +651,15 @@ export class CircleView extends MarkdownView {
         } else {
             // Moving outward (up)
             // Find parent section (section whose arc contains the current section's arc)
-            const parentSection = this.sectionHitboxes.find(section =>
+            const parentSections = this.sectionHitboxes.filter(section =>
                 Math.abs(section.outerRadius - this.selectedSection!.innerRadius) < 1 &&
                 section.startAngle <= this.selectedSection!.startAngle &&
                 section.endAngle >= this.selectedSection!.endAngle
             );
 
-            if (parentSection) {
+            if (parentSections.length > 0) {
                 // Just take the first parent (there should usually be only one).
-                this.selectedSection = parentSection;
+                this.selectedSection = parentSections[0];
                 this.redraw();
             }
         }
@@ -494,6 +742,9 @@ export class CircleView extends MarkdownView {
             return;
         }
 
+        // Clear out the hitboxes before redrawing
+        this.sectionHitboxes = [];
+
         const { width, height } = canvas;
         const [centerX, centerY] = [width / 2, height / 2];
 
@@ -505,7 +756,7 @@ export class CircleView extends MarkdownView {
 
         // Calculate max depth to determine circle spacing
         const maxDepth = this.findMaxDepth(root);
-        const maxRadius = Math.min(width, height) / 2 * 0.95; // leave some padding
+        const maxRadius = Math.max(width, height) / 2 * 0.95; // leave some padding
         const radiusStep = maxDepth > 1 ? maxRadius / maxDepth : maxRadius;
 
         // Color palette for different levels
@@ -638,7 +889,7 @@ export class CircleView extends MarkdownView {
             // Fill and stroke
             ctx.fillStyle = colors[colorIndex] + "80"; // 50% opacity
             ctx.fill();
-            ctx.strokeStyle = isSelected ? "000" : "#333";
+            ctx.strokeStyle = isSelected ? "#000" : "#333";
             ctx.lineWidth = isSelected ? 3 : 1;
             ctx.stroke();
 
