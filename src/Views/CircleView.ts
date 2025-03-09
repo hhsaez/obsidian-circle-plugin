@@ -14,8 +14,15 @@ interface SelectableSection {
 };
 
 export class CircleView extends MarkdownView {
+    private markdownFile: TFile | undefined;
     private canvas: HTMLCanvasElement | undefined;
     private root: Node | undefined;
+
+    private sectionHitboxes: Array<SelectableSection> = [];
+    private selectedSection: SelectableSection | undefined;
+
+    private editingInput: HTMLInputElement | null = null;
+    private editStartNode: Node | null = null;
 
     constructor(leaf: WorkspaceLeaf) {
         super(leaf);
@@ -35,17 +42,14 @@ export class CircleView extends MarkdownView {
 
     async setState(state: any, result: ViewStateResult): Promise<void> {
         if (state.file) {
-            const markdownFile = this.app.vault.getAbstractFileByPath(state.file) as TFile;
-            const markdown = await this.app.vault.read(markdownFile);
+            this.markdownFile = this.app.vault.getAbstractFileByPath(state.file) as TFile;
+            const markdown = await this.app.vault.read(this.markdownFile);
             const children = parseHeaders(markdown);
-            this.root = { level: 0, title: markdownFile.basename || "Root", children: children };
+            this.root = { level: 0, title: this.markdownFile.basename || "Root", children: children };
             this.redraw();
         }
         return super.setState(state, result);
     }
-
-    private sectionHitboxes: Array<SelectableSection> = [];
-    private selectedSection: SelectableSection | undefined;
 
     async onOpen() {
         this.containerEl.empty();
@@ -82,6 +86,15 @@ export class CircleView extends MarkdownView {
         requestAnimationFrame(() => this.canvas?.focus());
     }
 
+    protected async onClose(): Promise<void> {
+        // Remove the input element if it exists
+        this.editingInput?.remove();
+        this.editingInput = null;
+
+        // Cleanup
+        this.containerEl.empty();
+    }
+
     // Handle keyboard navigation
     private handleKeyDown(event: KeyboardEvent) {
         if (!this.canvas || !this.root) {
@@ -94,6 +107,11 @@ export class CircleView extends MarkdownView {
                 this.selectedSection = this.sectionHitboxes[0];
                 this.redraw();
             }
+            return;
+        }
+
+        if (event.key === "Enter") {
+            this.showEditInput();
             return;
         }
 
@@ -111,6 +129,207 @@ export class CircleView extends MarkdownView {
             case "ArrowDown":
                 this.navigateVertically(-1);
                 break;
+        }
+    }
+
+    private showEditInput() {
+        if (!this.selectedSection || !this.canvas) {
+            return;
+        }
+
+        const { title, centerX, centerY, startAngle, endAngle, innerRadius, outerRadius } = this.selectedSection;
+
+        // Fin the corresponding node in our hierarchy
+        const selectedNode = this.findNodeBySection(this.root!, title);
+        if (!selectedNode) {
+            return;
+        }
+
+        this.editStartNode = selectedNode;
+
+        // Create or reuse input element
+        if (!this.editingInput) {
+            this.editingInput = document.createElement("input");
+            this.editingInput.type = "text";
+            this.editingInput.className = "circle-edit-input";
+
+            // Style the input
+            Object.assign(this.editingInput.style, {
+                position: "absolute",
+                boxSizing: "border-box",
+                padding: "4px 8px",
+                background: "rgba(255, 255, 255, 0.9)",
+                border: "2px solid var(--interactive-accent)",
+                borderRadius: "4px",
+                boxShadow: "0 2px 8px rgba(0, 0, 0, 0.2)",
+                fontSize: "14px",
+                color: "#000",
+                zIndex: "100",
+            });
+
+            // Add event listeners
+            this.editingInput.addEventListener("keydown", this.handleInputKeyDown.bind(this));
+            this.editingInput.addEventListener("blur", this.handleInputBlur.bind(this));
+
+            this.containerEl.appendChild(this.editingInput);
+        }
+
+        // Calculate optimal position for the input
+        // For text position, we use the same logic used for text rendering
+        const textRadius = (outerRadius - (outerRadius - innerRadius) * 0.35);
+        const midAngle = (startAngle + endAngle) / 2;
+        const textX = centerX + textRadius * Math.cos(midAngle);
+        const textY = centerY + textRadius * Math.sin(midAngle);
+
+        // Get canvas bounds relative to the window
+        const canvasRect = this.canvas.getBoundingClientRect();
+
+        // Use pixel coordinates relative to the container
+        const inputLeft = canvasRect.left + textX;
+        const inputTop = canvasRect.top + textY;
+
+        // Set input value and position
+        this.editingInput.value = title;
+
+        // Calculate width based on the context
+        const minWidth = 100;
+        const textWidth = title.length * 8; // rough estimate
+        const width = Math.max(minWidth, Math.min(300, textWidth));
+
+        // Position the input centered on the text point
+        Object.assign(this.editingInput.style, {
+            left: `${inputLeft - width / 2}px`,
+            top: `${inputTop - 15}px`, // Offset to center vertically
+            width: `${width}px`,
+        });
+
+        // Show and focus on the input
+        this.editingInput.style.display = "block";
+        this.editingInput.focus();
+        this.editingInput.select(); // Select all text
+    }
+
+    private handleInputKeyDown(event: KeyboardEvent) {
+        if (!this.editingInput) {
+            return;
+        }
+
+        if (event.key === "Enter") {
+            // Commit changes
+            this.saveEditChanges();
+            event.preventDefault();
+        } else if (event.key === "Escape") {
+            // Cancel editing
+            this.hideEditInput();
+            event.preventDefault();
+        }
+    }
+
+    private handleInputBlur() {
+        // When input loses focus, discard changes (or maybe save them?)
+        this.hideEditInput();
+    }
+
+    private hideEditInput() {
+        if (this.editingInput) {
+            this.editingInput.style.display = "none";
+            this.canvas?.focus(); // Return focus to the canvas
+        }
+        this.editStartNode = null;
+    }
+
+    private async saveEditChanges() {
+        if (!this.editingInput || !this.editStartNode || !this.selectedSection) {
+            this.hideEditInput();
+            return;
+        }
+
+        const newTitle = this.editingInput.value.trim();
+        if (!newTitle || newTitle === this.editStartNode.title) {
+            // No changes or empty title, just hide the input
+            this.hideEditInput();
+            return;
+        }
+
+        try {
+            // Update the markdown file
+            await this.updateMarkdownFile(this.editStartNode, newTitle);
+
+            // Update the node title
+            this.editStartNode.title = newTitle;
+
+            // Update the selected section title
+            this.selectedSection.title = newTitle;
+
+            // Hide input and redraw visualization
+            this.hideEditInput();
+            this.redraw();
+        } catch (error) {
+            console.error("Failed to update hedar: ", error);
+            // TODO: we should show a notice to the user
+            this.hideEditInput();
+        }
+    }
+
+    private findNodeBySection(node: Node, title: string): Node | null {
+        if (node.title === title) {
+            return node;
+        }
+
+        if (node.children) {
+            for (const child of node.children) {
+                const found = this.findNodeBySection(child, title);
+                if (found) {
+                    return found;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    // TODO: Could this be simpler if we keep the line number of the header in the node?
+    // TODO: How do we handle duplicate headers?
+    // TODO: How do we handle inline metadata or tags in the header?
+    private async updateMarkdownFile(node: Node, newTitle: string) {
+        // Get the current file
+        const file = this.markdownFile;// this.app.workspace.getActiveFile();
+        if (!file) {
+            console.error("No active file to update");
+            return;
+        }
+
+        try {
+
+            // Read the file content
+            const content = await this.app.vault.read(file);
+            const lines = content.split("\n");
+
+            // Find the header line with the matching title
+            let headerLine = -1;
+            const headerPrefix = "#".repeat(node.level) + " ";
+            for (let i = 0; i < lines.length; ++i) {
+                const line = lines[i];
+                if (line.startsWith(headerPrefix) && line.substring(headerPrefix.length).trim() === node.title) {
+                    headerLine = i;
+                    break;
+                }
+            }
+
+            if (headerLine >= 0) {
+                // Update the line
+                lines[headerLine] = headerPrefix + newTitle;
+
+                // Write the updated content back to the file
+                const newContent = lines.join("\n");
+                await this.app.vault.modify(file, newContent);
+
+                // Maybe update the view to reflect changes?
+            }
+
+        } catch (error) {
+            console.error("Failed to update file: ", error);
+            throw error; // rethrow the error
         }
     }
 
@@ -244,10 +463,6 @@ export class CircleView extends MarkdownView {
             // Redraw without the selection
             this.redraw();
         }
-    }
-
-    protected async onClose(): Promise<void> {
-        this.containerEl.empty();
     }
 
     private redraw() {
