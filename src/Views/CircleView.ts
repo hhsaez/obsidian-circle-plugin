@@ -76,6 +76,27 @@ export class CircleView extends MarkdownView {
 
         // Focus on canvas after initialization
         requestAnimationFrame(() => this.canvas?.focus());
+
+        this.registerDomEvent(document, "keydown", (event) => {
+            if (event.key === "Enter") {
+                event.preventDefault();
+
+                if (this.isEditingActive()) {
+                    this.commitChanges();
+                } else if (event.shiftKey) {
+                    if (event.ctrlKey) {
+                        this.createChildHeader();
+                    } else {
+                        this.createSiblingHeader();
+                    }
+                } else {
+                    this.showEditInput();
+                }
+            } else if (event.key === "Escape") {
+                event.preventDefault();
+                this.cancelChanges();
+            }
+        });
     }
 
     protected async onClose(): Promise<void> {
@@ -780,7 +801,7 @@ export class CircleView extends MarkdownView {
         ctx.stroke();
 
         // Draw file title in the center
-        ctx.font = "bold 16px Arial";
+        ctx.font = "bold 16px Poppins, Helvetica Neue, sans-serif";
         ctx.fillStyle = "#333";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
@@ -909,7 +930,7 @@ export class CircleView extends MarkdownView {
 
             if (arcLength >= MIN_ARC_LENGTH) {
                 ctx.save();
-                ctx.font = "12px Arial";
+                ctx.font = "16px Poppins, Helvetica Neue, sans-serif";
                 ctx.fillStyle = "#000";
 
                 // Determine text rotation based on position in the circle

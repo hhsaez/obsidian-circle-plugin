@@ -25,12 +25,12 @@ export default class CirclePlugin extends Plugin {
 					return true;
 				}
 			},
-			hotkeys: [
-				{
-					modifiers: ["Shift", "Ctrl"],
-					key: "Enter",
-				}
-			]
+			// hotkeys: [
+			// 	{
+			// 		modifiers: ["Shift", "Ctrl"],
+			// 		key: "Enter",
+			// 	}
+			// ]
 		});
 
 		this.addCommand({
@@ -46,12 +46,12 @@ export default class CirclePlugin extends Plugin {
 				}
 				return false;
 			},
-			hotkeys: [
-				{
-					modifiers: ["Shift"],
-					key: "Enter",
-				}
-			]
+			// hotkeys: [
+			// 	{
+			// 		modifiers: ["Shift"],
+			// 		key: "Enter",
+			// 	}
+			// ]
 		});
 
 		this.addCommand({
@@ -71,12 +71,33 @@ export default class CirclePlugin extends Plugin {
 				}
 				return false;
 			},
-			hotkeys: [
-				{
-					modifiers: [],
-					key: "Enter",
+			// hotkeys: [
+			// 	{
+			// 		modifiers: [],
+			// 		key: "Enter",
+			// 	}
+			// ]
+		});
+
+		this.addCommand({
+			id: "circle-submit",
+			name: "Submit current action",
+			checkCallback: (checking: boolean) => {
+				const activeView = this.app.workspace.getActiveViewOfType(CircleView);
+				if (activeView && activeView.isEditingActive()) {
+					if (!checking) {
+						activeView.commitChanges();
+					}
+					return false;
 				}
-			]
+				return false;
+			},
+			// hotkeys: [
+			// 	{
+			// 		modifiers: [],
+			// 		key: "Enter",
+			// 	}
+			// ]
 		});
 
 		this.addCommand({
@@ -92,12 +113,12 @@ export default class CirclePlugin extends Plugin {
 				}
 				return false;
 			},
-			hotkeys: [
-				{
-					modifiers: [],
-					key: "Escape",
-				}
-			]
+			// hotkeys: [
+			// 	{
+			// 		modifiers: [],
+			// 		key: "Escape",
+			// 	}
+			// ]
 		});
 
 	}
